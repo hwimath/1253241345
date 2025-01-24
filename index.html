@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>곱셈과 나눗셈 문장제(난이도 중상)</title>
+  <!-- MathJax 로드 -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+
+  <!-- 간단한 흑백 스타일 -->
+  <style>
+    body {
+      margin: 20px;
+      background-color: #FFFFFF;
+      color: #000000;
+      font-family: sans-serif;
+    }
+    h1, h2, h3 {
+      margin: 0.5em 0;
+    }
+    #gameContainer, #quizArea, #endScreen {
+      margin-top: 20px;
+    }
+    .hidden {
+      display: none;
+    }
+    .energy-bar {
+      width: 200px;
+      height: 20px;
+      border: 1px solid #000;
+      background-color: #fff;
+      margin: 5px 0;
+      position: relative;
+    }
+    .energy-fill {
+      background-color: #000;
+      height: 100%;
+      width: 100%;
+      transition: width 0.2s linear;
+    }
+    .choiceItem {
+      margin: 0.3em 0;
+    }
+    .answerFeedback {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    #response {
+      margin-top: 10px;
+      white-space: pre-wrap; /* 줄바꿈 표시용 */
+    }
+  </style>
+</head>
+<body>
+<h1>곱셈과 나눗셈 문장제(난이도 중상)</h1>
+
+<!-- 난이도 및 이름 입력 폼 -->
+<div id="startScreen">
+  <div>
+    <label for="playerName">이름: </label>
+    <input type="text" id="playerName" placeholder="이름을 입력하세요" />
+  </div>
+  <br/>
+  <div>
+    <label>난이도 선택:</label>
+    <select id="difficultySelect">
+      <option value="top">최상</option>
+      <option value="high">상</option>
+      <option value="mid" selected>중</option>
+      <option value="low">하</option>
+    </select>
+  </div>
+  <br/>
+  <button onclick="startGame()">게임 시작</button>
+</div>
+
+<!-- 게임 진행 영역 -->
+<div id="gameContainer" class="hidden">
+  <!-- 전체 경과 시간 표시 -->
+  <div>전체 경과 시간: <span id="totalTime">0</span>초</div>
+  <!-- 남은 기회 -->
+  <div>남은 기회: <span id="lives">3</span></div>
+  <!-- 현재 점수 -->
+  <div>점수: <span id="score">0</span></div>
+
+  <!-- 현재 문제의 타이머(에너지바) -->
+  <div id="energyBar" class="energy-bar">
+    <div id="energyFill" class="energy-fill"></div>
+  </div>
+
+  <!-- 퀴즈 영역 -->
+  <div id="quizArea">
+    <div id="questionText"></div>
+    <div id="choicesContainer"></div>
+    <button id="submitBtn" onclick="submitAnswer()">정답 확인</button>
+    <div id="feedback" class="answerFeedback"></div>
+  </div>
+</div>
+
+<!-- 게임 종료 화면 -->
+<div id="endScreen" class="hidden">
+  <h2>게임 종료</h2>
+  <div>최종 점수: <span id="finalScore">0</span></div>
+  <div>총 소요 시간: <span id="finalTime">0</span>초</div>
+  <button id="sendScoreBtn" onclick="sendScore()">점수 전송</button>
+  <div id="response"></div>
+</div>
+
+<script>
+// ---------------------
+// 서버 전송 함수 (문제에서 제공된 코드)
+// ---------------------
+function saveData(game, name, score, elapsedTime) {
+    const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+    const requestData = {
+        game,
+        name,
+        score: parseInt(score, 10),
+        elapsedTime: parseInt(elapsedTime, 10)
+    };
+
+    try {
+        fetch(FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        })
+        .then(async response => {
+            const responseData = await response.json();
+            if (response.ok) {
+                document.getElementById('response').innerText =
+                  "성공: " + JSON.stringify(responseData, null, 2);
+            } else {
+                document.getElementById('response').innerText =
+                  "오류: " + JSON.stringify(responseData, null, 2);
+            }
+        })
+        .catch(error => {
+            console.error('요청 실패:', error);
+            document.getElementById('response').innerText =
+                "네트워크 오류: " + error.message;
+        });
+    } catch (error) {
+        console.error('요청 실패:', error);
+        document.getElementById('response').innerText =
+            "네트워크 오류: " + error.message;
+    }
+}
+
+// ---------------------
+// 문제 데이터 (총 44문)
+// ---------------------
+// 이 배열에는 모든 문제의 '질문 텍스트(question)'와 '정답(answer)'만 저장하고,
+// 보기(4지선다)는 아래에서 동적으로 생성합니다.
+const questionBank = [
+  // 원본 4문제
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 3시간 동안 27개의 장난감을 만든다고 합니다. 같은 빠르기로 5시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 45
+  },
+  {
+    question: "일정한 빠르기로 4분 동안 12개의 종이배를 접을 수 있는 학생이 있습니다. 같은 빠르기로 쉬지 않고 종이배를 접는다면 7분 동안 접을 수 있는 종이배는 모두 몇 개인지?",
+    answer: 21
+  },
+  {
+    question: "토끼 3마리가 하루에 당근 6개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면 토끼 8마리가 당근 48개를 먹는 데 며칠이 걸립니까?",
+    answer: 3
+  },
+  {
+    question: "다람쥐 2마리가 하루에 밤 8개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면 다람쥐 3마리가 밤 24개를 먹는 데 며칠이 걸립니까?",
+    answer: 2
+  },
+
+  // A. 장난감 공장 유형(10문)
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 2시간 동안 16개의 장난감을 만든다고 합니다. 같은 빠르기로 6시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 48
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 2시간 동안 18개의 장난감을 만든다고 합니다. 같은 빠르기로 7시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 63
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 3시간 동안 21개의 장난감을 만든다고 합니다. 같은 빠르기로 4시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 28
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 3시간 동안 24개의 장난감을 만든다고 합니다. 같은 빠르기로 6시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 48
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 4시간 동안 24개의 장난감을 만든다고 합니다. 같은 빠르기로 5시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 30
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 4시간 동안 28개의 장난감을 만든다고 합니다. 같은 빠르기로 9시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 63
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 5시간 동안 25개의 장난감을 만든다고 합니다. 같은 빠르기로 8시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 40
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 5시간 동안 35개의 장난감을 만든다고 합니다. 같은 빠르기로 6시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 42
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 6시간 동안 42개의 장난감을 만든다고 합니다. 같은 빠르기로 7시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 49
+  },
+  {
+    question: "어느 장난감 공장에서는 일정한 빠르기로 6시간 동안 48개의 장난감을 만든다고 합니다. 같은 빠르기로 9시간 동안 만들 수 있는 장난감은 모두 몇 개입니까?",
+    answer: 72
+  },
+
+  // B. 종이배 접기 유형(10문)
+  {
+    question: "일정한 빠르기로 2분 동안 10개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 6분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 30
+  },
+  {
+    question: "일정한 빠르기로 3분 동안 15개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 4분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 20
+  },
+  {
+    question: "일정한 빠르기로 3분 동안 18개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 7분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 42
+  },
+  {
+    question: "일정한 빠르기로 4분 동안 20개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 8분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 40
+  },
+  {
+    question: "일정한 빠르기로 4분 동안 24개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 5분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 30
+  },
+  {
+    question: "일정한 빠르기로 4분 동안 28개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 3분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 21
+  },
+  {
+    question: "일정한 빠르기로 5분 동안 30개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 9분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 54
+  },
+  {
+    question: "일정한 빠르기로 5분 동안 35개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 6분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 42
+  },
+  {
+    question: "일정한 빠르기로 6분 동안 36개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 5분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 30
+  },
+  {
+    question: "일정한 빠르기로 7분 동안 35개의 종이배를 접을 수 있습니다. 같은 빠르기로 쉬지 않고 5분 동안 접으면 모두 몇 개를 접을 수 있을까요?",
+    answer: 25
+  },
+
+  // C. 토끼(10문)
+  {
+    question: "토끼 2마리가 하루에 당근 6개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 3마리가 당근 27개를 먹으려면 며칠 걸릴까요?",
+    answer: 3
+  },
+  {
+    question: "토끼 4마리가 하루에 당근 8개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 2마리가 당근 20개를 먹으려면 며칠 걸릴까요?",
+    answer: 5
+  },
+  {
+    question: "토끼 3마리가 하루에 당근 9개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 6마리가 당근 54개를 먹으려면 며칠 걸릴까요?",
+    answer: 3
+  },
+  {
+    question: "토끼 5마리가 하루에 당근 10개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 10마리가 당근 40개를 먹으려면 며칠 걸릴까요?",
+    answer: 2
+  },
+  {
+    question: "토끼 6마리가 하루에 당근 12개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 4마리가 당근 40개를 먹으려면 며칠 걸릴까요?",
+    answer: 5
+  },
+  {
+    question: "토끼 4마리가 하루에 당근 12개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 6마리가 당근 54개를 먹으려면 며칠 걸릴까요?",
+    answer: 3
+  },
+  {
+    question: "토끼 6마리가 하루에 당근 18개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 3마리가 당근 45개를 먹으려면 며칠 걸릴까요?",
+    answer: 5
+  },
+  {
+    question: "토끼 8마리가 하루에 당근 24개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 4마리가 당근 60개를 먹으려면 며칠 걸릴까요?",
+    answer: 5
+  },
+  {
+    question: "토끼 3마리가 하루에 당근 6개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 9마리가 당근 36개를 먹으려면 며칠 걸릴까요?",
+    answer: 2
+  },
+  {
+    question: "토끼 9마리가 하루에 당근 18개를 먹습니다. 모든 토끼가 매일 똑같은 수의 당근을 먹는다면, 토끼 6마리가 당근 36개를 먹으려면 며칠 걸릴까요?",
+    answer: 3
+  },
+
+  // D. 다람쥐(10문)
+  {
+    question: "다람쥐 2마리가 하루에 밤 6개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 4마리가 밤 36개를 먹으려면 며칠 걸릴까요?",
+    answer: 3
+  },
+  {
+    question: "다람쥐 3마리가 하루에 밤 6개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 6마리가 밤 36개를 먹으려면 며칠 걸릴까요?",
+    answer: 3
+  },
+  {
+    question: "다람쥐 4마리가 하루에 밤 8개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 2마리가 밤 20개를 먹으려면 며칠 걸릴까요?",
+    answer: 5
+  },
+  {
+    question: "다람쥐 5마리가 하루에 밤 10개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 2마리가 밤 40개를 먹으려면 며칠 걸릴까요?",
+    answer: 10
+  },
+  {
+    question: "다람쥐 6마리가 하루에 밤 12개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 4마리가 밤 40개를 먹으려면 며칠 걸릴까요?",
+    answer: 5
+  },
+  {
+    question: "다람쥐 3마리가 하루에 밤 9개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 6마리가 밤 54개를 먹으려면 며칠 걸릴까요?",
+    answer: 3
+  },
+  {
+    question: "다람쥐 4마리가 하루에 밤 12개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 3마리가 밤 45개를 먹으려면 며칠 걸릴까요?",
+    answer: 5
+  },
+  {
+    question: "다람쥐 6마리가 하루에 밤 24개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 3마리가 밤 36개를 먹으려면 며칠 걸릴까요?",
+    answer: 3
+  },
+  {
+    question: "다람쥐 8마리가 하루에 밤 16개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 4마리가 밤 32개를 먹으려면 며칠 걸릴까요?",
+    answer: 4
+  },
+  {
+    question: "다람쥐 9마리가 하루에 밤 18개를 먹습니다. 모든 다람쥐가 매일 똑같은 수의 밤을 먹는다면, 다람쥐 3마리가 밤 30개를 먹으려면 며칠 걸릴까요?",
+    answer: 5
+  }
+];
+
+// ---------------------
+// 전역 변수들
+// ---------------------
+let playerName = "";
+let difficulty = "mid";
+let questionIndex = 0;      // 현재 문제 인덱스
+let score = 0;             // 현재 점수
+let lives = 3;             // 남은 기회
+let totalTime = 0;         // 게임 전체 경과 시간(초)
+let questionTime = 0;      // 현재 문제 제한 시간(난이도에 따라 변동)
+let intervalId = null;     // 문제별 타이머(에너지바) setInterval
+let totalTimeId = null;    // 전체 경과 시간 setInterval
+let isGameOver = false;
+
+// 난이도별 점수, 시간
+const DIFFICULTY_SETTINGS = {
+  top:  { time: 20, point: 20 },
+  high: { time: 30, point: 15 },
+  mid:  { time: 40, point: 13 },
+  low:  { time: Infinity, point: 10 }
+};
+
+// ---------------------
+// 유틸 함수
+// ---------------------
+function shuffleArray(arr) {
+  for(let i=arr.length-1; i>0; i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// 보기(4지선다) 생성용
+function generateChoices(correct) {
+  // 정답 1개 + 오답 3개
+  const choices = [correct];
+  while (choices.length < 4) {
+    // ±1~±5 범위의 무작위 오차
+    let delta = Math.floor(Math.random()*5) + 1;
+    // 가끔 음수로
+    if (Math.random()<0.5) delta *= -1;
+    let val = correct + delta;
+    if (val>0 && !choices.includes(val)) {
+      choices.push(val);
+    }
+  }
+  shuffleArray(choices);
+  return choices;
+}
+
+// MathJax 렌더링
+function renderMath() {
+  // 새 문항/보기를 DOM에 삽입한 후 호출
+  if (window.MathJax) {
+    MathJax.typeset();
+  }
+}
+
+// ---------------------
+// 게임 시작
+// ---------------------
+function startGame() {
+  // 이름, 난이도 가져오기
+  playerName = document.getElementById("playerName").value.trim();
+  if(!playerName) {
+    alert("이름을 입력하세요!");
+    return;
+  }
+  difficulty = document.getElementById("difficultySelect").value;
+
+  // 초기화
+  score = 0;
+  lives = 3;
+  totalTime = 0;
+  questionIndex = 0;
+  isGameOver = false;
+
+  // 문제 순서 섞기
+  shuffleArray(questionBank);
+
+  // 화면 토글
+  document.getElementById("startScreen").classList.add("hidden");
+  document.getElementById("gameContainer").classList.remove("hidden");
+  document.getElementById("endScreen").classList.add("hidden");
+
+  // 난이도별 시간·점수 설정(한 문제당 제한 시간)
+  questionTime = DIFFICULTY_SETTINGS[difficulty].time;
+
+  // 표기 업데이트
+  document.getElementById("lives").textContent = lives;
+  document.getElementById("score").textContent = score;
+
+  // 전체 경과 시간 카운트 시작
+  totalTimeId = setInterval(()=>{
+    totalTime++;
+    document.getElementById("totalTime").textContent = totalTime;
+  }, 1000);
+
+  // 첫 문제 출력
+  loadQuestion();
+}
+
+// ---------------------
+// 문제 로드
+// ---------------------
+function loadQuestion() {
+  // 문제를 모두 소진했다면 → 무한 랜덤 출제(문제 인덱스 무작위로)
+  // 혹은 그냥 계속 questionIndex++ 해서 44개를 넘어가면 무한 랜덤
+  let qObj;
+  if (questionIndex < questionBank.length) {
+    qObj = questionBank[questionIndex];
+    questionIndex++;
+  } else {
+    // 무한 랜덤 모드
+    const rnd = Math.floor(Math.random() * questionBank.length);
+    qObj = questionBank[rnd];
+  }
+
+  // 문제 텍스트 표시
+  const qDiv = document.getElementById("questionText");
+  qDiv.innerHTML = "<p>" + qObj.question + "</p>";
+
+  // 보기 4개 생성
+  const choices = generateChoices(qObj.answer);
+  const choiceContainer = document.getElementById("choicesContainer");
+  choiceContainer.innerHTML = "";
+  for (let i=0; i<choices.length; i++) {
+    let c = choices[i];
+    let radioId = "choice_"+i;
+    choiceContainer.innerHTML += `
+      <div class="choiceItem">
+        <input type="radio" name="choice" id="${radioId}" value="${c}">
+        <label for="${radioId}">\\(${c}\\)</label>
+      </div>
+    `;
+  }
+
+  // 정답 확인 버튼 초기화
+  document.getElementById("feedback").textContent = "";
+  document.getElementById("submitBtn").disabled = false;
+
+  // MathJax 렌더링
+  renderMath();
+
+  // 문제 타이머 시작
+  startQuestionTimer(qObj.answer);
+}
+
+// ---------------------
+// 문제 타이머(에너지 바) 세팅
+// ---------------------
+let timeLeft = 0; // 현재 문제의 남은 시간
+function startQuestionTimer(correctAnswer) {
+  // 기존 타이머 종료
+  if(intervalId) clearInterval(intervalId);
+  // 시간 제한 없는 모드일 경우
+  if (questionTime === Infinity) {
+    // 에너지바를 꽉 채워 놓고 그대로 두기
+    document.getElementById("energyFill").style.width = "100%";
+    return;
+  }
+
+  timeLeft = questionTime;
+  // 매초 감소
+  intervalId = setInterval(()=>{
+    timeLeft--;
+    const ratio = (timeLeft / questionTime)*100;
+    document.getElementById("energyFill").style.width = ratio + "%";
+
+    if (timeLeft <= 0) {
+      // 시간 초과
+      clearInterval(intervalId);
+      document.getElementById("energyFill").style.width = "0%";
+      handleTimeOut(correctAnswer);
+    }
+  }, 1000);
+}
+
+// ---------------------
+// 시간 초과 시 처리
+// ---------------------
+function handleTimeOut(correctAnswer) {
+  // 기회 1 감소
+  lives--;
+  document.getElementById("lives").textContent = lives;
+  document.getElementById("feedback").textContent =
+    "시간이 초과되었습니다! 정답은 " + correctAnswer + " 입니다.";
+
+  checkGameOver();
+  if(!isGameOver) {
+    // 다음 문제
+    setTimeout(loadQuestion, 1500);
+  }
+}
+
+// ---------------------
+// 정답 제출
+// ---------------------
+function submitAnswer() {
+  // 시간 제한 있으면 타이머 종료
+  if(intervalId) clearInterval(intervalId);
+
+  const feedbackDiv = document.getElementById("feedback");
+  feedbackDiv.textContent = "";
+
+  // 선택한 답
+  const radios = document.getElementsByName("choice");
+  let selected = null;
+  for (let r of radios) {
+    if (r.checked) {
+      selected = parseInt(r.value, 10);
+      break;
+    }
+  }
+
+  // 아무것도 선택 안 한 경우
+  if (selected===null || isNaN(selected)) {
+    feedbackDiv.textContent = "보기를 선택하세요.";
+    return;
+  }
+
+  // 현재 보여지는 문제(직전에 loadQuestion에서 뽑은 것)
+  // 문제 인덱스가 이미 하나 올라갔으므로, questionIndex-1
+  let currentQ = null;
+  if (questionIndex>0) {
+    currentQ = questionBank[Math.min(questionIndex-1, questionBank.length-1)];
+  }
+  // 무한 랜덤 후엔 정확한 매칭이 어렵지만, loadQuestion에서 qObj를 잡아두었다면
+  // 별도 저장도 가능. 여기서는 간단히 questionIndex-1 참고
+  let correctAnswer = currentQ ? currentQ.answer : 0;
+
+  if (selected === correctAnswer) {
+    // 정답
+    let point = DIFFICULTY_SETTINGS[difficulty].point;
+    score += point;
+    document.getElementById("score").textContent = score;
+    feedbackDiv.textContent = "정답입니다! (+" + point + "점)";
+  } else {
+    // 오답
+    lives--;
+    document.getElementById("lives").textContent = lives;
+    feedbackDiv.textContent = "오답입니다! 정답은 " + correctAnswer + " 입니다.";
+  }
+
+  document.getElementById("submitBtn").disabled = true;
+  checkGameOver();
+  if(!isGameOver) {
+    // 잠시 후 다음 문제
+    setTimeout(loadQuestion, 1500);
+  }
+}
+
+// ---------------------
+// 게임 종료 여부 체크
+// ---------------------
+function checkGameOver() {
+  if (lives <= 0) {
+    gameOver();
+  }
+}
+
+// ---------------------
+// 게임 종료
+// ---------------------
+function gameOver() {
+  isGameOver = true;
+  // 타이머 정리
+  if(intervalId) clearInterval(intervalId);
+  if(totalTimeId) clearInterval(totalTimeId);
+
+  // 최종 화면 세팅
+  document.getElementById("finalScore").textContent = score;
+  document.getElementById("finalTime").textContent = totalTime;
+
+  // 화면 전환
+  document.getElementById("gameContainer").classList.add("hidden");
+  document.getElementById("endScreen").classList.remove("hidden");
+}
+
+// ---------------------
+// 점수 전송
+// ---------------------
+function sendScore() {
+  // 게임 이름, 플레이어 이름, 점수, 총 소요 시간
+  saveData("곱셈과 나눗셈 문장제(난이도 중상)", playerName, score, totalTime);
+}
+</script>
+</body>
+</html>
